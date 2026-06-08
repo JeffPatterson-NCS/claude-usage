@@ -13,8 +13,10 @@ public static class ClaudeCookies
             return WindowsCookieReader.Read();
         if (OperatingSystem.IsMacOS())
             return MacCookieReader.Read();
+        if (OperatingSystem.IsLinux())
+            return LinuxCookieReader.Read();
 
         throw new PlatformNotSupportedException(
-            "Reading Claude desktop cookies is only implemented for Windows and macOS.");
+            "Reading Claude desktop cookies is not implemented for this platform.");
     }
 }

@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using ClaudeUsage.Models;
@@ -11,6 +10,11 @@ namespace ClaudeUsage.Services;
 public sealed class UsageApi
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(15) };
+
+    private static readonly string UserAgent =
+        OperatingSystem.IsWindows() ? "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" :
+        OperatingSystem.IsMacOS()   ? "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" :
+                                      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
     public sealed record Result(PlanUsage Usage, RateLimits Limits);
 
@@ -32,7 +36,7 @@ public sealed class UsageApi
     {
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         req.Headers.Add("Cookie", $"sessionKey={sessionKey}");
-        req.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+        req.Headers.UserAgent.ParseAdd(UserAgent);
         req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
         using var resp = await Http.SendAsync(req);

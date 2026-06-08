@@ -1,6 +1,5 @@
 using Avalonia.Controls;
 using Avalonia.Layout;
-using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Threading;
 using ClaudeUsage.Models;
@@ -34,6 +33,7 @@ public partial class MainWindow : Window
     private async Task RefreshAsync()
     {
         RefreshButton.IsEnabled = false;
+        ShowLoading();
 
         var statusTask = ServiceStatusClient.FetchAsync();
         try
@@ -195,6 +195,18 @@ public partial class MainWindow : Window
         Background = Palette.Hairline,
         Margin = new Avalonia.Thickness(0, 6),
     };
+
+    private void ShowLoading()
+    {
+        PlanLabel.Text = "";
+        ContentPanel.Children.Clear();
+        ContentPanel.Children.Add(new TextBlock
+        {
+            Text = "Loading…",
+            Foreground = Palette.Muted,
+            Margin = new Avalonia.Thickness(0, 4, 0, 0),
+        });
+    }
 
     private void ShowError(string message)
     {
