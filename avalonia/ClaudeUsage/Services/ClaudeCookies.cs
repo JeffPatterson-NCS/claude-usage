@@ -5,7 +5,11 @@ namespace ClaudeUsage.Services;
 /// the cross-platform app genuinely diverges per OS.
 public static class ClaudeCookies
 {
-    public sealed record Cookies(string SessionKey, string OrgId);
+    // OrgId is the clean UUID used in URL paths.
+    // RawOrgCookieValue is the full decrypted lastActiveOrg string sent back in Cookie headers.
+    // ExtraCookies carries Cloudflare cookies (cf_clearance, __cf_bm) needed to pass bot detection.
+    public sealed record Cookies(string SessionKey, string OrgId, string RawOrgCookieValue,
+        IReadOnlyDictionary<string, string>? ExtraCookies = null);
 
     public static Cookies Read()
     {

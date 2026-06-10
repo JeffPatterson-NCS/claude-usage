@@ -1,9 +1,8 @@
-using System.IO;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Microsoft.Data.Sqlite;
+using System.Text.RegularExpressions;
 
 namespace ClaudeUsage.Services;
 
@@ -30,12 +29,17 @@ internal static class WindowsCookieReader
         var aesKey = ReadMasterKey(localStatePath);
 
         string? sessionKey = null, orgId = null;
-        foreach (var (name, value) in CookieStore.ReadClaudeCookies(cookiePath, enc => DecryptValue(enc, aesKey)))
+        var extra = new Dictionary<string, string>();
+        foreach (var (name, value) in CookieStore.ReadClaudeCookies(cookiePath, (_, enc) => DecryptValue(enc, aesKey)))
         {
+            // First-wins: rows are ordered most-recently-accessed first, so the
+            // first match for each name is the freshest and most likely correct.
             switch (name)
             {
-                case "sessionKey": sessionKey = value; break;
-                case "lastActiveOrg": orgId = value; break;
+                case "sessionKey" when sessionKey is null: sessionKey = value; break;
+                case "lastActiveOrg" when orgId is null: orgId = value; break;
+                case "cf_clearance" when !extra.ContainsKey("cf_clearance"): extra[name] = value; break;
+                case "__cf_bm" when !extra.ContainsKey("__cf_bm"): extra[name] = value; break;
             }
         }
 
@@ -44,7 +48,16 @@ internal static class WindowsCookieReader
         if (string.IsNullOrEmpty(orgId))
             throw new InvalidOperationException("organization ID not found in cookies");
 
-        return new ClaudeCookies.Cookies(sessionKey, orgId);
+        // The decrypted lastActiveOrg value may have binary garbage prepended to
+        // the UUID. Extract just the UUID portion so the URL stays well-formed.
+        var rawOrgId = orgId;
+        orgId = ExtractUuid(orgId) ?? orgId;
+        DiagnosticLog.Write($"WindowsCookieReader: sessionKey.Length={sessionKey.Length}, orgId={orgId}" +
+            (orgId != rawOrgId ? $" (extracted from {rawOrgId.Length}-char raw value)" : "") +
+            $", cf_clearance={extra.ContainsKey("cf_clearance")}, __cf_bm={extra.ContainsKey("__cf_bm")}");
+        DiagnosticLog.Write($"  Log file: {DiagnosticLog.LogPath}");
+
+        return new ClaudeCookies.Cookies(sessionKey, orgId, rawOrgId, extra.Count > 0 ? extra : null);
     }
 
     private static byte[] ReadMasterKey(string localStatePath)
@@ -67,6 +80,16 @@ internal static class WindowsCookieReader
         return ProtectedData.Unprotect(wrapped, optionalEntropy: null, DataProtectionScope.CurrentUser);
     }
 
+    private static readonly Regex UuidRegex =
+        new(@"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static string? ExtractUuid(string value)
+    {
+        var m = UuidRegex.Match(value);
+        return m.Success ? m.Value : null;
+    }
+
     private static string DecryptValue(byte[] encrypted, byte[] key)
     {
         // v10 / v11: AES-256-GCM. Layout: [3-byte prefix][12 nonce][cipher][16 tag]
@@ -86,7 +109,10 @@ internal static class WindowsCookieReader
             var plain = new byte[cipherLen];
             using var gcm = new AesGcm(key, tagLen);
             gcm.Decrypt(nonce, cipher, tag, plain);
-            return Encoding.UTF8.GetString(plain);
+            // Latin-1 maps each byte 0x00–0xFF to the same Unicode code point,
+// so it round-trips through .NET's Latin-1 header serialisation
+// without loss. Enterprise session tokens are binary, not ASCII text.
+return Encoding.Latin1.GetString(plain);
         }
 
         // Legacy (pre-v10) values are wrapped directly with DPAPI.

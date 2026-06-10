@@ -23,7 +23,7 @@ internal static class LinuxCookieReader
                 "Claude cookie store not found — is the Claude desktop app installed and logged in?");
 
         string? sessionKey = null, orgId = null;
-        foreach (var (name, value) in CookieStore.ReadClaudeCookies(cookiePath, enc => UnixCookieDecryptor.DecryptCookie(enc, aesKey)))
+        foreach (var (name, value) in CookieStore.ReadClaudeCookies(cookiePath, (_, enc) => UnixCookieDecryptor.DecryptCookie(enc, aesKey)))
         {
             switch (name)
             {
@@ -37,6 +37,6 @@ internal static class LinuxCookieReader
         if (string.IsNullOrEmpty(orgId))
             throw new InvalidOperationException("organization ID not found in cookies");
 
-        return new ClaudeCookies.Cookies(sessionKey, orgId);
+        return new ClaudeCookies.Cookies(sessionKey, orgId, orgId);
     }
 }
