@@ -30,7 +30,7 @@ internal static class WindowsCookieReader
 
         string? sessionKey = null, orgId = null;
         var extra = new Dictionary<string, string>();
-        foreach (var (name, value) in CookieStore.ReadClaudeCookies(cookiePath, (_, enc) => DecryptValue(enc, aesKey)))
+        foreach (var (name, value) in CookieStore.ReadClaudeCookies(cookiePath, (host, enc) => DecryptValue(host, enc, aesKey)))
         {
             // First-wins: rows are ordered most-recently-accessed first, so the
             // first match for each name is the freshest and most likely correct.
@@ -52,7 +52,8 @@ internal static class WindowsCookieReader
         // the UUID. Extract just the UUID portion so the URL stays well-formed.
         var rawOrgId = orgId;
         orgId = ExtractUuid(orgId) ?? orgId;
-        DiagnosticLog.Write($"WindowsCookieReader: sessionKey.Length={sessionKey.Length}, orgId={orgId}" +
+        DiagnosticLog.Write($"WindowsCookieReader: sessionKey.Length={sessionKey.Length}, " +
+            $"sessionKey starts with sk-ant={sessionKey.StartsWith("sk-ant", StringComparison.Ordinal)}, orgId={orgId}" +
             (orgId != rawOrgId ? $" (extracted from {rawOrgId.Length}-char raw value)" : "") +
             $", cf_clearance={extra.ContainsKey("cf_clearance")}, __cf_bm={extra.ContainsKey("__cf_bm")}");
         DiagnosticLog.Write($"  Log file: {DiagnosticLog.LogPath}");
@@ -90,7 +91,7 @@ internal static class WindowsCookieReader
         return m.Success ? m.Value : null;
     }
 
-    private static string DecryptValue(byte[] encrypted, byte[] key)
+    private static string DecryptValue(string hostKey, byte[] encrypted, byte[] key)
     {
         // v10 / v11: AES-256-GCM. Layout: [3-byte prefix][12 nonce][cipher][16 tag]
         if (encrypted.Length > 3 &&
@@ -109,14 +110,29 @@ internal static class WindowsCookieReader
             var plain = new byte[cipherLen];
             using var gcm = new AesGcm(key, tagLen);
             gcm.Decrypt(nonce, cipher, tag, plain);
-            // Latin-1 maps each byte 0x00–0xFF to the same Unicode code point,
-// so it round-trips through .NET's Latin-1 header serialisation
-// without loss. Enterprise session tokens are binary, not ASCII text.
-return Encoding.Latin1.GetString(plain);
+            return DecodePlaintext(hostKey, plain);
         }
 
         // Legacy (pre-v10) values are wrapped directly with DPAPI.
         var decrypted = ProtectedData.Unprotect(encrypted, optionalEntropy: null, DataProtectionScope.CurrentUser);
-        return Encoding.UTF8.GetString(decrypted);
+        return DecodePlaintext(hostKey, decrypted);
+    }
+
+    /// Since Chromium cookie-DB meta version 24 (Chrome ~130+), the decrypted
+    /// plaintext is SHA-256(host_key) followed by the value — the hash binds the
+    /// value to its row. Strip the 32-byte prefix only when it verifies, so
+    /// older databases without the prefix pass through unchanged.
+    private static string DecodePlaintext(string hostKey, byte[] plain)
+    {
+        const int hashLen = 32;
+        if (plain.Length >= hashLen &&
+            plain.AsSpan(0, hashLen).SequenceEqual(SHA256.HashData(Encoding.UTF8.GetBytes(hostKey))))
+        {
+            return Encoding.UTF8.GetString(plain, hashLen, plain.Length - hashLen);
+        }
+
+        // Latin-1 maps each byte 0x00–0xFF to the same Unicode code point, so any
+        // residual binary bytes round-trip without loss.
+        return Encoding.Latin1.GetString(plain);
     }
 }

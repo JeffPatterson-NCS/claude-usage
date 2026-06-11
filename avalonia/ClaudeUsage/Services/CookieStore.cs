@@ -4,12 +4,12 @@ namespace ClaudeUsage.Services;
 
 /// Shared Chromium cookie-DB reading. The SQLite schema is identical across
 /// platforms; only the per-value decryption differs, so callers pass a decrypt
-/// delegate.
+/// delegate receiving (hostKey, encryptedValue).
 internal static class CookieStore
 {
     private const string CookieQuery =
         """
-        SELECT name, encrypted_value
+        SELECT host_key, name, encrypted_value
         FROM cookies
         WHERE (host_key LIKE '%claude.ai%' OR host_key LIKE '%anthropic.com%')
           AND name IN ('sessionKey', 'lastActiveOrg', 'cf_clearance', '__cf_bm')
@@ -231,9 +231,10 @@ internal static class CookieStore
         using var reader = cmd.ExecuteReader();
         while (reader.Read())
         {
-            var name = reader.GetString(0);
+            var hostKey = reader.GetString(0);
+            var name = reader.GetString(1);
             var encrypted = (byte[])reader["encrypted_value"];
-            results.Add((name, decrypt(name, encrypted)));
+            results.Add((name, decrypt(hostKey, encrypted)));
         }
         return results;
     }
