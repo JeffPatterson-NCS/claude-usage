@@ -1,9 +1,7 @@
-using System.IO;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Microsoft.Data.Sqlite;
 
 namespace ClaudeUsage.Services;
 
@@ -30,7 +28,7 @@ internal static class WindowsCookieReader
         var aesKey = ReadMasterKey(localStatePath);
 
         string? sessionKey = null, orgId = null;
-        foreach (var (name, value) in CookieStore.ReadClaudeCookies(cookiePath, enc => DecryptValue(enc, aesKey)))
+        foreach (var (name, value) in CookieStore.ReadClaudeCookies(cookiePath, (host, enc) => DecryptValue(host, enc, aesKey)))
         {
             switch (name)
             {
@@ -67,7 +65,7 @@ internal static class WindowsCookieReader
         return ProtectedData.Unprotect(wrapped, optionalEntropy: null, DataProtectionScope.CurrentUser);
     }
 
-    private static string DecryptValue(byte[] encrypted, byte[] key)
+    private static string DecryptValue(string hostKey, byte[] encrypted, byte[] key)
     {
         // v10 / v11: AES-256-GCM. Layout: [3-byte prefix][12 nonce][cipher][16 tag]
         if (encrypted.Length > 3 &&
@@ -86,11 +84,27 @@ internal static class WindowsCookieReader
             var plain = new byte[cipherLen];
             using var gcm = new AesGcm(key, tagLen);
             gcm.Decrypt(nonce, cipher, tag, plain);
-            return Encoding.UTF8.GetString(plain);
+            return DecodePlaintext(hostKey, plain);
         }
 
         // Legacy (pre-v10) values are wrapped directly with DPAPI.
         var decrypted = ProtectedData.Unprotect(encrypted, optionalEntropy: null, DataProtectionScope.CurrentUser);
-        return Encoding.UTF8.GetString(decrypted);
+        return DecodePlaintext(hostKey, decrypted);
+    }
+
+    /// Since Chromium cookie-DB meta version 24 (Chrome ~130+), the decrypted
+    /// plaintext is SHA256(host_key) followed by the value — the hash binds the
+    /// value to its row. Strip the 32-byte prefix only when it verifies, so
+    /// older databases without the prefix pass through unchanged.
+    private static string DecodePlaintext(string hostKey, byte[] plain)
+    {
+        const int hashLen = 32;
+        if (plain.Length >= hashLen &&
+            plain.AsSpan(0, hashLen).SequenceEqual(SHA256.HashData(Encoding.UTF8.GetBytes(hostKey))))
+        {
+            return Encoding.UTF8.GetString(plain, hashLen, plain.Length - hashLen);
+        }
+
+        return Encoding.UTF8.GetString(plain);
     }
 }

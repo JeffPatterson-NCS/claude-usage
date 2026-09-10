@@ -19,6 +19,7 @@
                     <Button x:Name="StatusButton" Content="API Status"
                             Padding="6,2" Background="Transparent" BorderThickness="0"
                             Foreground="#0A84FF" Cursor="Hand" />
+                    <Button x:Name="SettingsButton" Content="&#x2699;" Padding="8,2" />
                     <Button x:Name="RefreshButton" Content="&#x21BA;" Padding="8,2" />
                 </StackPanel>
             </Grid>

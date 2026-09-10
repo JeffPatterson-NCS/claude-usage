@@ -1,0 +1,29 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="ClaudeUsage.Views.SettingsWindow"
+        Title="Claude Usage — Settings"
+        Width="360" SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner">
+    <StackPanel Margin="16" Spacing="12">
+        <CheckBox x:Name="EnterpriseCheckBox" Content="Enterprise account (no billing permission)" />
+
+        <StackPanel Spacing="4">
+            <TextBlock Text="Plan label" Foreground="#888888" FontSize="11" />
+            <TextBox x:Name="PlanLabelBox" Watermark="Team" />
+        </StackPanel>
+
+        <StackPanel Spacing="4">
+            <TextBlock Text="Monthly spend cap ($)" Foreground="#888888" FontSize="11" />
+            <TextBox x:Name="SpendCapBox" Watermark="2000" />
+        </StackPanel>
+
+        <TextBlock Text="Plan label and spend cap are used only while Enterprise is checked, since the API can't tell us those values on that account type."
+                    Foreground="#888888" FontSize="11" TextWrapping="Wrap" />
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button x:Name="CancelButton" Content="Cancel" Padding="12,4" />
+            <Button x:Name="SaveButton" Content="Save" Padding="12,4" />
+        </StackPanel>
+    </StackPanel>
+</Window>

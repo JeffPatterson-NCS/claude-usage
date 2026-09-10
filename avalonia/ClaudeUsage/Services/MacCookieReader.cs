@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.IO;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Text;
@@ -27,7 +26,7 @@ internal static partial class MacCookieReader
                 "Claude cookie store not found — is the Claude desktop app installed and logged in?");
 
         string? sessionKey = null, orgId = null;
-        foreach (var (name, value) in CookieStore.ReadClaudeCookies(cookiePath, enc => DecryptCookie(enc, aesKey)))
+        foreach (var (name, value) in CookieStore.ReadClaudeCookies(cookiePath, (_, enc) => DecryptCookie(enc, aesKey)))
         {
             switch (name)
             {

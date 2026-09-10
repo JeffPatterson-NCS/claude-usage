@@ -20,6 +20,12 @@ public partial class MainWindow : Window
 
         StatusButton.Click += (_, _) => UrlOpener.Open("https://status.claude.com");
         RefreshButton.Click += async (_, _) => await RefreshAsync();
+        SettingsButton.Click += async (_, _) =>
+        {
+            var settingsWindow = new SettingsWindow();
+            settingsWindow.SettingsSaved += async () => await RefreshAsync();
+            await settingsWindow.ShowDialog(this);
+        };
 
         _timer = new DispatcherTimer { Interval = AutoRefreshInterval };
         _timer.Tick += async (_, _) => await RefreshAsync();
@@ -38,10 +44,12 @@ public partial class MainWindow : Window
         var statusTask = ServiceStatusClient.FetchAsync();
         try
         {
+            var settings = AppSettingsStore.Load();
+
             UsageApi.Result result;
             try
             {
-                result = await UsageApi.LoadAsync();
+                result = await UsageApi.LoadAsync(includeRateLimits: !settings.IsEnterpriseAccount);
             }
             catch (Exception ex)
             {
@@ -49,7 +57,7 @@ public partial class MainWindow : Window
                 return;
             }
 
-            BuildContent(result.Usage, result.Limits);
+            BuildContent(result.Usage, result.Limits, settings);
         }
         finally
         {
@@ -65,9 +73,9 @@ public partial class MainWindow : Window
         ToolTip.SetTip(StatusDot, s.Description);
     }
 
-    private void BuildContent(PlanUsage usage, RateLimits limits)
+    private void BuildContent(PlanUsage usage, RateLimits? limits, AppSettings settings)
     {
-        PlanLabel.Text = Formatting.FriendlyTier(limits.RateLimitTier);
+        PlanLabel.Text = limits is not null ? Formatting.FriendlyTier(limits.RateLimitTier) : settings.PlanLabel;
         ContentPanel.Children.Clear();
 
         if (usage.FiveHour is { } five)
@@ -92,7 +100,7 @@ public partial class MainWindow : Window
         }
 
         ContentPanel.Children.Add(Hairline());
-        ContentPanel.Children.Add(BuildExtraRow(usage.ExtraUsage));
+        ContentPanel.Children.Add(BuildExtraRow(usage.ExtraUsage, settings));
         ContentPanel.Children.Add(Hairline());
 
         var historyButton = new Button
@@ -106,14 +114,25 @@ public partial class MainWindow : Window
         ContentPanel.Children.Add(historyButton);
     }
 
-    private static Control BuildExtraRow(ExtraUsage eu)
+    /// Enterprise seats don't get a utilization figure back from the API (the
+    /// billing permission that would compute it isn't granted), so fall back
+    /// to the locally-set spend cap to estimate a percentage from spent credits.
+    private static Control BuildExtraRow(ExtraUsage eu, AppSettings settings)
     {
+        // used_credits comes back from the API in cents.
+        var spentDollars = eu.UsedCredits / 100;
+
         var pct = 0.0;
         var subtext = eu.IsEnabled ? "Enabled — no usage yet" : "Not enabled";
         if (eu.Utilization is { } util)
         {
             pct = util;
-            subtext = eu.UsedCredits is { } credits ? $"${credits:F2} spent" : "";
+            subtext = spentDollars is { } credits ? $"${credits:F2} spent" : "";
+        }
+        else if (settings.IsEnterpriseAccount && spentDollars is { } spent && settings.MonthlySpendCapUsd > 0)
+        {
+            pct = spent / settings.MonthlySpendCapUsd * 100;
+            subtext = $"${spent:F2} / ${settings.MonthlySpendCapUsd:F0} spent (est.)";
         }
         return BarRow("Extra Usage", subtext, pct);
     }
